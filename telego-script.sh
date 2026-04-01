@@ -17,6 +17,10 @@ TELEGO_SERVICE="/etc/systemd/system/telego.service"
 TELEGO_DATA_DIR="/var/lib/telego"
 TELEGO_LOG_DIR="/var/log/telego"
 
+# Значения по умолчанию
+DEFAULT_PORT="8800"
+DEFAULT_SNI="github.com"
+
 # Функции вывода
 print_status() { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[OK]${NC} $1"; }
@@ -34,6 +38,14 @@ check_root() {
 
 # Проверка установки
 is_installed() { [[ -f "$TELEGO_BIN" ]]; }
+
+# Автоустановка если не установлен
+auto_install_if_needed() {
+    if ! is_installed; then
+        print_warning "TeleGO не установлен. Выполняется автоматическая установка..."
+        install_telego
+    fi
+}
 
 # Получение IP сервера
 get_server_ip() {
@@ -99,17 +111,19 @@ EOF
     
     systemctl daemon-reload
     
-    # Запрос параметров
-    read -p "Введите порт (по умолчанию 443): " port
-    port=${port:-443}
-    read -p "Введите SNI домен (по умолчанию www.google.com): " sni
-    sni=${sni:-www.google.com}
+    # Запрос параметров с значениями по умолчанию
+    echo
+    echo -e "${YELLOW}Настройка TeleGO (Enter = значение по умолчанию)${NC}"
+    read -p "Введите порт (по умолчанию $DEFAULT_PORT): " port
+    port=${port:-$DEFAULT_PORT}
+    read -p "Введите SNI домен (по умолчанию $DEFAULT_SNI): " sni
+    sni=${sni:-$DEFAULT_SNI}
     
     create_config "$port" "$sni"
     systemctl enable telego
     start_service
     
-    print_success "TeleGO успешно установлен!"
+    print_success "TeleGO успешно установлен на порт $port с SNI $sni!"
 }
 
 # Создание конфигурации
@@ -132,20 +146,18 @@ EOF
 
 # Добавление пользователя
 add_user() {
-    if ! is_installed; then
-        print_error "TeleGO не установлен. Сначала выполните установку (пункт 1)"
-        return 1
-    fi
+    auto_install_if_needed
     
     print_header "ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ"
     
     read -p "Введите имя пользователя: " username
     [[ -z "$username" ]] && { print_error "Имя не может быть пустым"; return 1; }
     
-    read -p "Введите SNI домен (по умолчанию текущий): " sni
-    if [[ -z "$sni" ]]; then
-        sni=$(grep "mask-host" "$TELEGO_CONFIG" | cut -d'"' -f2)
-    fi
+    # Получаем текущий SNI из конфига
+    current_sni=$(grep "mask-host" "$TELEGO_CONFIG" | cut -d'"' -f2)
+    echo -e "Текущий SNI: ${GREEN}$current_sni${NC}"
+    read -p "Использовать другой SNI? (оставьте пустым для текущего): " new_sni
+    sni=${new_sni:-$current_sni}
     
     print_status "Генерация секрета для $sni..."
     secret=$(generate_secret "$sni")
@@ -179,10 +191,7 @@ add_user() {
 
 # Удаление пользователя
 remove_user() {
-    if ! is_installed; then
-        print_error "TeleGO не установлен"
-        return 1
-    fi
+    auto_install_if_needed
     
     print_header "УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ"
     
@@ -210,17 +219,16 @@ remove_user() {
 
 # Смена порта
 change_port() {
-    if ! is_installed; then
-        print_error "TeleGO не установлен"
-        return 1
-    fi
+    auto_install_if_needed
     
     print_header "СМЕНА ПОРТА"
     
     current_port=$(grep "bind-to" "$TELEGO_CONFIG" | grep -oP ':\K[0-9]+')
     echo -e "Текущий порт: ${GREEN}$current_port${NC}"
     
-    read -p "Введите новый порт (1-65535): " new_port
+    read -p "Введите новый порт (по умолчанию $DEFAULT_PORT): " new_port
+    new_port=${new_port:-$DEFAULT_PORT}
+    
     [[ ! "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1 ]] || [[ "$new_port" -gt 65535 ]] && { print_error "Неверный порт"; return 1; }
     
     sed -i "s/bind-to = \".*:${current_port}\"/bind-to = \"0.0.0.0:${new_port}\"/" "$TELEGO_CONFIG"
@@ -231,17 +239,15 @@ change_port() {
 
 # Смена SNI
 change_sni() {
-    if ! is_installed; then
-        print_error "TeleGO не установлен"
-        return 1
-    fi
+    auto_install_if_needed
     
     print_header "СМЕНА SNI (TLS FRONTING)"
     
     current_sni=$(grep "mask-host" "$TELEGO_CONFIG" | cut -d'"' -f2)
     echo -e "Текущий SNI: ${GREEN}$current_sni${NC}"
     
-    read -p "Введите новый SNI домен: " new_sni
+    read -p "Введите новый SNI домен (по умолчанию $DEFAULT_SNI): " new_sni
+    new_sni=${new_sni:-$DEFAULT_SNI}
     [[ -z "$new_sni" ]] && { print_error "SNI не может быть пустым"; return 1; }
     
     sed -i "s/mask-host = \".*\"/mask-host = \"$new_sni\"/" "$TELEGO_CONFIG"
@@ -274,12 +280,12 @@ change_sni() {
 
 # Показать статус
 show_status() {
-    print_header "СТАТУС TELEGO"
-    
     if ! is_installed; then
         print_error "TeleGO не установлен"
         return
     fi
+    
+    print_header "СТАТУС TELEGO"
     
     if systemctl is-active --quiet telego; then
         echo -e "Статус: ${GREEN}РАБОТАЕТ${NC}"
@@ -309,6 +315,12 @@ show_status() {
     echo
     echo -e "${GREEN}Последние логи:${NC}"
     journalctl -u telego -n 5 --no-pager 2>/dev/null || echo "Логи недоступны"
+}
+
+# Перезапуск сервиса
+restart_service_menu() {
+    auto_install_if_needed
+    restart_service
 }
 
 # Полное удаление
@@ -349,6 +361,8 @@ show_menu() {
         echo " 8. Полное удаление TeleGO"
         echo " 0. Выход"
         echo
+        echo -e "${YELLOW}Значения по умолчанию: порт $DEFAULT_PORT, SNI $DEFAULT_SNI${NC}"
+        echo
         read -p "Выберите пункт меню: " choice
         echo
         
@@ -359,7 +373,7 @@ show_menu() {
             4) change_port ;;
             5) change_sni ;;
             6) show_status ;;
-            7) restart_service ;;
+            7) restart_service_menu ;;
             8) remove_telego ;;
             0) print_status "Выход..."; exit 0 ;;
             *) print_error "Неверный пункт меню" ;;
