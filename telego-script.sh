@@ -3,8 +3,6 @@
 # TeleGO Management Script (Russian Version)
 # Скрипт управления TeleGO
 
-set -e
-
 # Цвета для вывода
 RED='\033[0;31m'
 GREEN='\033[0;32m'
