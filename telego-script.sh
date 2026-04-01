@@ -39,12 +39,28 @@ check_root() {
 # Проверка установки
 is_installed() { [[ -f "$TELEGO_BIN" ]]; }
 
-# Автоустановка если не установлен
-auto_install_if_needed() {
+# Функция для проверки и установки (возвращает 0 если установлено)
+ensure_installed() {
     if ! is_installed; then
-        print_warning "TeleGO не установлен. Выполняется автоматическая установка..."
-        install_telego
+        print_warning "TeleGO не установлен. Сначала нужно установить."
+        echo
+        read -p "Установить TeleGO сейчас? (y/n): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            install_telego
+            if is_installed; then
+                print_success "TeleGO установлен. Продолжаем..."
+                return 0
+            else
+                print_error "Не удалось установить TeleGO"
+                return 1
+            fi
+        else
+            print_error "Операция отменена. Сначала установите TeleGO (пункт 1)"
+            return 1
+        fi
     fi
+    return 0
 }
 
 # Получение IP сервера
@@ -72,7 +88,7 @@ install_telego() {
         print_warning "TeleGO уже установлен"
         read -p "Переустановить? (y/n): " -n 1 -r
         echo
-        [[ ! $REPLY =~ ^[Yy]$ ]] && return
+        [[ ! $REPLY =~ ^[Yy]$ ]] && return 1
         remove_telego
     fi
     
@@ -124,6 +140,7 @@ EOF
     start_service
     
     print_success "TeleGO успешно установлен на порт $port с SNI $sni!"
+    return 0
 }
 
 # Создание конфигурации
@@ -146,7 +163,9 @@ EOF
 
 # Добавление пользователя
 add_user() {
-    auto_install_if_needed
+    if ! ensure_installed; then
+        return 1
+    fi
     
     print_header "ДОБАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯ"
     
@@ -191,7 +210,9 @@ add_user() {
 
 # Удаление пользователя
 remove_user() {
-    auto_install_if_needed
+    if ! ensure_installed; then
+        return 1
+    fi
     
     print_header "УДАЛЕНИЕ ПОЛЬЗОВАТЕЛЯ"
     
@@ -219,7 +240,9 @@ remove_user() {
 
 # Смена порта
 change_port() {
-    auto_install_if_needed
+    if ! ensure_installed; then
+        return 1
+    fi
     
     print_header "СМЕНА ПОРТА"
     
@@ -239,7 +262,9 @@ change_port() {
 
 # Смена SNI
 change_sni() {
-    auto_install_if_needed
+    if ! ensure_installed; then
+        return 1
+    fi
     
     print_header "СМЕНА SNI (TLS FRONTING)"
     
@@ -319,7 +344,9 @@ show_status() {
 
 # Перезапуск сервиса
 restart_service_menu() {
-    auto_install_if_needed
+    if ! ensure_installed; then
+        return 1
+    fi
     restart_service
 }
 
