@@ -65,14 +65,34 @@ ensure_installed() {
 
 # Получение IP сервера
 get_server_ip() {
-    curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || curl -s -4 ipinfo.io/ip 2>/dev/null
+    curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || curl -s -4 ipinfo.io/ip 2>/dev/null || echo "SERVER_IP"
 }
 
-# Генерация секрета
+# Генерация секрета (исправленная версия)
 generate_secret() {
     local sni="$1"
-    local secret_output=$(telego generate "$sni" 2>/dev/null)
-    echo "$secret_output" | grep -oP 'secret=\K[0-9a-f]+' | head -1
+    
+    # Запускаем telego generate и сохраняем вывод
+    local output
+    output=$(telego generate "$sni" 2>&1)
+    
+    # Пытаемся извлечь секрет из разных форматов вывода
+    local secret=""
+    
+    # Формат: secret=1234567890abcdef...
+    secret=$(echo "$output" | grep -oE 'secret=[0-9a-f]{32}' | cut -d'=' -f2 | head -1)
+    
+    # Если не нашли, пробуем найти 32-символьную hex-строку
+    if [ -z "$secret" ]; then
+        secret=$(echo "$output" | grep -oE '[0-9a-f]{32}' | head -1)
+    fi
+    
+    # Если всё ещё нет, пробуем через link=
+    if [ -z "$secret" ]; then
+        secret=$(echo "$output" | grep -oE 'secret=[^&]+' | cut -d'=' -f2 | head -1)
+    fi
+    
+    echo "$secret"
 }
 
 # Управление сервисом
@@ -103,7 +123,6 @@ install_telego() {
     LATEST_VERSION=$(curl -s https://api.github.com/repos/Scratch-net/telego/releases/latest | grep -oP '"tag_name": "\K[^"]+' | sed 's/^v//')
     
     if [ -z "$LATEST_VERSION" ]; then
-        # Если не удалось получить, используем последнюю известную
         LATEST_VERSION="0.3.1"
         print_warning "Не удалось получить версию, используем $LATEST_VERSION"
     fi
@@ -191,7 +210,7 @@ EOF
     print_success "Конфигурация создана"
 }
 
-# Добавление пользователя
+# Добавление пользователя (исправленная версия)
 add_user() {
     if ! ensure_installed; then
         return 1
@@ -213,8 +232,12 @@ add_user() {
     
     if [[ -z "$secret" ]]; then
         print_error "Не удалось сгенерировать секрет"
+        print_status "Проверьте, что TeleGO работает: $TELEGO_BIN version"
+        $TELEGO_BIN version 2>&1
         return 1
     fi
+    
+    print_success "Секрет сгенерирован: ${secret:0:16}...${secret: -16}"
     
     # Добавление в конфиг
     if ! grep -q "^\[secrets\]" "$TELEGO_CONFIG"; then
