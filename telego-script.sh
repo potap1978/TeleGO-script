@@ -68,7 +68,7 @@ get_server_ip() {
     curl -s -4 ifconfig.me 2>/dev/null || curl -s -4 icanhazip.com 2>/dev/null || curl -s -4 ipinfo.io/ip 2>/dev/null || echo "SERVER_IP"
 }
 
-# Генерация секрета (исправленная версия)
+# Генерация секрета
 generate_secret() {
     local sni="$1"
     
@@ -176,8 +176,15 @@ EOF
     # Запрос параметров с значениями по умолчанию
     echo
     echo -e "${YELLOW}Настройка TeleGO (Enter = значение по умолчанию)${NC}"
+    echo
+    
+    # Запрос порта
     read -p "Введите порт (по умолчанию $DEFAULT_PORT): " port
     port=${port:-$DEFAULT_PORT}
+    
+    echo
+    
+    # Запрос SNI
     read -p "Введите SNI домен (по умолчанию $DEFAULT_SNI): " sni
     sni=${sni:-$DEFAULT_SNI}
     
@@ -210,7 +217,7 @@ EOF
     print_success "Конфигурация создана"
 }
 
-# Добавление пользователя (исправленная версия)
+# Добавление пользователя
 add_user() {
     if ! ensure_installed; then
         return 1
@@ -237,7 +244,7 @@ add_user() {
         return 1
     fi
     
-    print_success "Секрет сгенерирован: ${secret:0:16}...${secret: -16}"
+    print_success "Секрет сгенерирован"
     
     # Добавление в конфиг
     if ! grep -q "^\[secrets\]" "$TELEGO_CONFIG"; then
