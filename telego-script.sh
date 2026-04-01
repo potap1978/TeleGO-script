@@ -39,7 +39,7 @@ check_root() {
 # Проверка установки
 is_installed() { [[ -f "$TELEGO_BIN" ]]; }
 
-# Функция для проверки и установки (возвращает 0 если установлено)
+# Функция для проверки и установки
 ensure_installed() {
     if ! is_installed; then
         print_warning "TeleGO не установлен. Сначала нужно установить."
@@ -96,11 +96,38 @@ install_telego() {
     apt-get update -qq
     apt-get install -y -qq wget curl make git build-essential
     
-    print_status "Загрузка TeleGO..."
+    print_status "Загрузка последней версии TeleGO..."
     cd /tmp
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/Scratch-net/telego/releases/latest | grep -oP '"tag_name": "\K(.*)(?=")')
-    wget -q "https://github.com/Scratch-net/telego/releases/download/${LATEST_VERSION}/telego_${LATEST_VERSION}_linux_amd64.tar.gz"
-    tar -xzf "telego_${LATEST_VERSION}_linux_amd64.tar.gz"
+    
+    # Получаем последнюю версию
+    LATEST_VERSION=$(curl -s https://api.github.com/repos/Scratch-net/telego/releases/latest | grep -oP '"tag_name": "\K[^"]+' | sed 's/^v//')
+    
+    if [ -z "$LATEST_VERSION" ]; then
+        # Если не удалось получить, используем последнюю известную
+        LATEST_VERSION="0.3.1"
+        print_warning "Не удалось получить версию, используем $LATEST_VERSION"
+    fi
+    
+    ARCHIVE_NAME="telego_${LATEST_VERSION}_linux_amd64.tar.gz"
+    DOWNLOAD_URL="https://github.com/Scratch-net/telego/releases/download/v${LATEST_VERSION}/${ARCHIVE_NAME}"
+    
+    print_status "Скачивание: $DOWNLOAD_URL"
+    
+    if ! wget -q "$DOWNLOAD_URL"; then
+        print_error "Не удалось скачать TeleGO"
+        return 1
+    fi
+    
+    if ! tar -xzf "$ARCHIVE_NAME"; then
+        print_error "Не удалось распаковать архив"
+        return 1
+    fi
+    
+    if [ ! -f "telego" ]; then
+        print_error "Файл telego не найден в архиве"
+        return 1
+    fi
+    
     mv telego "$TELEGO_BIN"
     chmod +x "$TELEGO_BIN"
     
@@ -138,6 +165,9 @@ EOF
     create_config "$port" "$sni"
     systemctl enable telego
     start_service
+    
+    # Очистка временных файлов
+    rm -f "/tmp/${ARCHIVE_NAME}"
     
     print_success "TeleGO успешно установлен на порт $port с SNI $sni!"
     return 0
